@@ -93,5 +93,58 @@ def is_terminal_state(t):
     """
     return t == TIME_STEPS - 1
 
+ACTIONS = LOTS + ["WAIT"]
+WAIT_PENALTY = 2
 
+def init_q_table():
+    # Make a Q-table for all states and actions
+    q_table = {}
 
+    for t in range(TIME_STEPS):
+        q_table[t] = {}
+        for action in ACTIONS:
+            q_table[t][action] = 0.0
+
+    return q_table
+
+def choose_action(q_table, state):
+    # Epsilon-greedy, sometimes try random action
+    if random.random() < EPSILON:
+        return random.choice(ACTIONS)
+
+    best_action = ACTIONS[0]
+    best_value = q_table[state][best_action]
+
+    for action in ACTIONS:
+        if q_table[state][action] > best_value:
+            best_value = q_table[state][action]
+            best_action = action
+
+    return best_action
+    
+def step(state, action):
+    # Current time step
+    t = state
+
+    # Case 1 wait
+    if action == "WAIT":
+        # if already at last time step, end the episode
+        if is_terminal_state(t):
+            return t, -WAIT_PENALTY, True
+        else:
+            return t + 1, -WAIT_PENALTY, False
+
+    # Case 2 choose a parking lot
+    lot = action
+
+    # If the lot is valid now, parking succeeds and episode ends
+    if walk_km[lot] <= W_MAX and avail[lot][t] == 1:
+        return t, reward(lot, t), True
+
+    # If the lot is not valid, give the bad reward and move to next time step if possible
+    if is_terminal_state(t):
+        return t, reward(lot, t), True
+    else:
+        return t + 1, reward(lot, t), False
+
+Q = init_q_table()
