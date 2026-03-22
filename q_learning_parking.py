@@ -9,10 +9,7 @@ import random
 # ---------------------------------------------------------
 # Sample test input
 # ---------------------------------------------------------
-
-
-LOTS = {"1": 21, "2": 22, "3": 23, "4": 24, "5": 25} # Dictionary mapping parking lots to nodes
-p_avail = [1, 1, 1, 1, 1]  # parking availability for each parking lot
+LOTS = ["P1", "P2", "P3"]
 
 # Drive time to each parking lot at each time step t
 drive_time = {
@@ -45,7 +42,7 @@ avail = {
 # ---------------------------------------------------------
 # Constraints and weights
 # ---------------------------------------------------------
-W_MAX = 10
+W_MAX = 0.5
 LAMBDA_WALK = 10.0
 LAMBDA_PRICE = 1.0
 PENALTY = 10**6
@@ -96,70 +93,58 @@ def is_terminal_state(t):
     """
     return t == TIME_STEPS - 1
 
+ACTIONS = LOTS + ["WAIT"]
+WAIT_PENALTY = 2
 
+def init_q_table():
+    # Make a Q-table for all states and actions
+    q_table = {}
 
+    for t in range(TIME_STEPS):
+        q_table[t] = {}
+        for action in ACTIONS:
+            q_table[t][action] = 0.0
 
+    return q_table
 
-def create_environment():
-    """
-    Create dynamic environment for Q-learning simulation
+def choose_action(q_table, state):
+    # Epsilon-greedy, sometimes try random action
+    if random.random() < EPSILON:
+        return random.choice(ACTIONS)
 
-    * Network: 
-        - Graph with 21 nodes + 5 parking nodes
-            + Node 0:         starting node
-            + Node 1 - 20:    intersections
-            + Node 21 - 25:   parking lots
-    * Parking lots:
-        - Parking lot 1 - 3 (Node 21 - 23): Within W_distance
-        - Parking lot 4 - 5 (Node 24 - 25): Out of W_MAX distance
-        - Price for each lots - randomize from 10 - 15 (dynamically change)
-        - Availability: 0 or 1 (dynamically change)   
-    * Traffic (Undirected Edges):
-        - Fixed weight edges (randomly choose from 5 - 10)
-        - During simulation, traffic dynamicity: 
-            + Low:     weight * 1
-            + Medium:  weight * 2
-            + High:    weight * 5
-    """
-    pass
+    best_action = ACTIONS[0]
+    best_value = q_table[state][best_action]
 
-def change_environment():
-    """
-    Create dynamic environment for Q-learning simulation
+    for action in ACTIONS:
+        if q_table[state][action] > best_value:
+            best_value = q_table[state][action]
+            best_action = action
 
-    * Network: 
-        - Graph with 21 nodes + 5 parking nodes
-            + Node 0: starting node
-            + Node 1 - 20: intersections
-            + Node 21 - 25: parking lots
-    * Parking lots:
-        - Parking lot 1 - 3 (Node 21 - 23): Within W_distance
-        - Parking lot 4 - 5 (Node 24 - 25): Out of W_MAX distance
-        - Price for each lots - randomize from 10 - 20 (dynamically change)
-        - Availability: 0 or 1 (dynamically change)   
-    * Traffic (Undirected Edges):
-        - Fixed weight edges (randomly choose from 5 - 10)
-        - During simulation, traffic dynamicity: 
-            + Low   (0): weight * 1
-            + Medium(1): weight * 2
-            + High  (2): weight * 5
-    """
-    pass
+    return best_action
+    
+def step(state, action):
+    # Current time step
+    t = state
 
-def q_learning_simulate():
-    """
+    # Case 1 wait
+    if action == "WAIT":
+        # if already at last time step, end the episode
+        if is_terminal_state(t):
+            return t, -WAIT_PENALTY, True
+        else:
+            return t + 1, -WAIT_PENALTY, False
 
-    """
-    pass
+    # Case 2 choose a parking lot
+    lot = action
 
-def print_result():
-    pass
+    # If the lot is valid now, parking succeeds and episode ends
+    if walk_km[lot] <= W_MAX and avail[lot][t] == 1:
+        return t, reward(lot, t), True
 
-def main():
-    create_environment()
-    q_learning_simulate()
-    print_result()
-    pass
+    # If the lot is not valid, give the bad reward and move to next time step if possible
+    if is_terminal_state(t):
+        return t, reward(lot, t), True
+    else:
+        return t + 1, reward(lot, t), False
 
-if __name__ == "__main__":
-    main()
+Q = init_q_table()
