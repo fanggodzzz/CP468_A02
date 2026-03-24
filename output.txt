@@ -1,0 +1,145 @@
+ALPHA: 0.5, ALPHA_DECAY: 0.99998, EPSILON: 1.0, EPSILON_DECAY: 0.99998
+Trained 10000 episodes
+Epsilon: 0.8187, Alpha: 0.4094
+Tried 9999
+9019
+Tried 9999
+9022
+Trained 20000 episodes
+Epsilon: 0.6703, Alpha: 0.3352
+Tried 9999
+9511
+Tried 9999
+9499
+Trained 30000 episodes
+Epsilon: 0.5488, Alpha: 0.2744
+Tried 9999
+9277
+Tried 9999
+9245
+Trained 40000 episodes
+Epsilon: 0.4493, Alpha: 0.2247
+Tried 9999
+8733
+Tried 9999
+8833
+Trained 50000 episodes
+Epsilon: 0.3679, Alpha: 0.1839
+Tried 9999
+8962
+Tried 9999
+8973
+Trained 60000 episodes
+Epsilon: 0.3012, Alpha: 0.1506
+Tried 9999
+9748
+Tried 9999
+9736
+Trained 70000 episodes
+Epsilon: 0.2466, Alpha: 0.1233
+Tried 9999
+9515
+Tried 9999
+9463
+Trained 80000 episodes
+Epsilon: 0.2019, Alpha: 0.1009
+Tried 9999
+9043
+Tried 9999
+9098
+Trained 90000 episodes
+Epsilon: 0.1653, Alpha: 0.0826
+Tried 9999
+9221
+Tried 9999
+9244
+Trained 100000 episodes
+Epsilon: 0.1353, Alpha: 0.0677
+Tried 9999
+9166
+Tried 9999
+9208
+Trained 110000 episodes
+Epsilon: 0.1108, Alpha: 0.0554
+Tried 9999
+9429
+Tried 9999
+9456
+Trained 120000 episodes
+Epsilon: 0.0907, Alpha: 0.0454
+Tried 9999
+9185
+Tried 9999
+9166
+Trained 130000 episodes
+Epsilon: 0.0743, Alpha: 0.0371
+Tried 9999
+9467
+Tried 9999
+9477
+Trained 140000 episodes
+Epsilon: 0.0608, Alpha: 0.0304
+Tried 9999
+9821
+Tried 9999
+9793
+Trained 150000 episodes
+Epsilon: 0.0498, Alpha: 0.0249
+Tried 9999
+9277
+Tried 9999
+9331
+Trained 160000 episodes
+Epsilon: 0.0408, Alpha: 0.0204
+Tried 9999
+9143
+Tried 9999
+9139
+Trained 170000 episodes
+Epsilon: 0.0334, Alpha: 0.0167
+Tried 9999
+9192
+Tried 9999
+9217
+Trained 180000 episodes
+Epsilon: 0.0273, Alpha: 0.0137
+Tried 9999
+8856
+Tried 9999
+8891
+Trained 190000 episodes
+Epsilon: 0.0224, Alpha: 0.0112
+Tried 9999
+8926
+Tried 9999
+8941
+Trained 200000 episodes
+Epsilon: 0.0183, Alpha: 0.0100
+Tried 9999
+9003
+Tried 9999
+9064
+Trained 210000 episodes
+Epsilon: 0.0150, Alpha: 0.0100
+Tried 9999
+9116
+Tried 9999
+9123
+Trained 220000 episodes
+Epsilon: 0.0123, Alpha: 0.0100
+Tried 9999
+9195
+Tried 9999
+9126
+Trained 230000 episodes
+Epsilon: 0.0101, Alpha: 0.0100
+Tried 9999
+9368
+Tried 9999
+9411
+Trained 240000 episodes
+Epsilon: 0.0100, Alpha: 0.0100
+Tried 9999
+9374
+Tried 9999
+9375

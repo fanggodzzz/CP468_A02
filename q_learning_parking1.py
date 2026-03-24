@@ -1,5 +1,6 @@
 import random
 import heapq
+import sys
 
 # ---------------------------------------------------------
 # Constraints and weights
@@ -7,18 +8,25 @@ import heapq
 W_MAX = 10
 LAMBDA_WALK = 10.0
 LAMBDA_PRICE = 1.0
-PENALTY = 10**6
+PENALTY = 5000
 
 # ---------------------------------------------------------
 # Q-learning parameters
 # ---------------------------------------------------------
-ALPHA = 0.1
+ALPHA = 0.5
 GAMMA = 0.9
 EPSILON = 1.0
-EPSILON_MIN = 0.05
-EPSILON_DECAY = 0.995
-EPISODES = 5000
+EPSILON_MIN = 0.01
+EPSILON_DECAY = 0.99998  # 200000 eps -> 0.01
+ALPHA_MIN = 0.01
+ALPHA_DECAY = 0.99998    # 200000 eps -> 0.01 / 0.99999
+EPISODES = 500000
 MAX_STEPS = 100
+TRY = 10000
+PERIOD = 10000
+SAMPLE = 2
+OUTPUT = "output.txt"
+DECAY_PERIOD = -1
 
 # ---------------------------------------------------------
 # Environment
@@ -37,6 +45,20 @@ traffic = {}
 Q = {}
 
 travel_time = 0
+
+# ---------------------------------------------------------
+# Clear output file
+# ---------------------------------------------------------
+def clear_file():
+    with open(OUTPUT, "w") as f:
+        f.write("")
+
+# ---------------------------------------------------------
+# Write result to OUTPUT file
+# ---------------------------------------------------------
+def write_result(log):
+    with open(OUTPUT, "a") as f:
+        f.write(f"{log}\n")
 
 # ---------------------------------------------------------
 # Read graph
@@ -219,6 +241,110 @@ def reward(state, travel_time):
     return 500 - travel_time - LAMBDA_WALK * walk_km[idx] - LAMBDA_PRICE * price[idx]
 
 # ---------------------------------------------------------
+# Trial - Almost same code as Q-learning
+# ---------------------------------------------------------
+
+def run_trial():
+
+    # print("\n--- Trial Run ---")
+
+    current = 0
+    chosen_lot = random.choice(list(LOTS.values()))
+    travel_time = 0
+    steps = 0
+
+    done = False
+
+    change_environment()
+
+    while not done and steps < MAX_STEPS:
+
+        steps += 1
+
+        dist, prev = Dijkstra(current)
+
+        state = (current, chosen_lot, tuple(p_avail))
+
+        if state not in Q:
+            action = random.choice(["move", "switch", "park"])
+        else:
+            action = max(Q[state], key=Q[state].get)
+
+        # print(f"\nStep {steps}")
+        # print("Current node:", current)
+        # print("Chosen lot:", chosen_lot)
+        # print("Action:", action)
+
+        if action == "move":
+
+            if dist[chosen_lot] == float('inf'):
+                # print("No route to lot.")
+                continue
+
+            next_node = get_next_node(current, chosen_lot, prev)
+
+            if next_node is None:
+                # print("Path reconstruction failed.")
+                continue
+
+            edge_weight = None
+            for v, w in graph[current]:
+                if v == next_node:
+                    edge_weight = w
+                    break
+
+            if edge_weight is None:
+                # print("Invalid edge.")
+                # write_result("Invalid edge.")
+                continue
+
+            level = traffic.get((current, next_node), "low")
+            factor = traffic_multiplier(level)
+
+            step_time = edge_weight * factor
+            travel_time += step_time
+
+            # print("Moving to:", next_node, "| travel time:", step_time)
+
+            current = next_node
+
+        elif action == "switch":
+
+            chosen_lot = random.choice(list(LOTS.values()))
+            # print("Switching lot →", chosen_lot)
+
+        else:
+
+            if current != chosen_lot:
+                # print("Cannot park here.")
+                continue
+
+            idx = LOT_INDEX[current]
+
+            if p_avail[idx] == 0:
+                # print("Lot full.")
+                # write_result("Lot full.")
+                continue
+
+            if walk_km[idx] > W_MAX:
+                # print("Walking distance too far.")
+                # write_result("Walking distance too far.")
+                continue
+
+            # print("\nSUCCESS: parked at lot", current)
+            # print("Total travel time:", travel_time)
+            # print("Walking distance:", walk_km[idx])
+            # print("Price:", price[idx])
+
+            done = True
+        change_environment()
+
+    if not done:
+        # print("\nTrial failed (max steps reached)")
+        return 0
+    return 1
+
+# ---------------------------------------------------------
 # Q-learning
 # ---------------------------------------------------------
 def q_learning_simulate():
@@ -234,13 +360,13 @@ def q_learning_simulate():
         - Change parking lot
         - Parking - Done 
     """
-
-    global EPSILON, travel_time
+    global EPSILON, travel_time, ALPHA
 
     actions = ["move", "switch", "park"]
 
     for ep in range(EPISODES):
-
+        msg = f"Trained {ep} episodes"
+        print(msg, end='\r')
         current = 0
         chosen_lot = random.choice(list(LOTS.values()))
         done = False
@@ -313,7 +439,8 @@ def q_learning_simulate():
                 next_state = (current, chosen_lot, tuple(p_avail))
 
                 # Small penalty for switching
-                r = -5  
+                r = -5
+                  
                 done = False
 
             # Action: Park
@@ -342,132 +469,61 @@ def q_learning_simulate():
 
             current = next_state[0]
 
+            # Make the environment dynamically
+            change_environment()
+
         # Reduce epsilon per episode
         if EPSILON > EPSILON_MIN:
             EPSILON *= EPSILON_DECAY
 
-        # Make the environment dynamically
-        change_environment()
+        # Reduce alpha per episode 
+        if ALPHA > ALPHA_MIN:
+            ALPHA*= ALPHA_DECAY
 
-# ---------------------------------------------------------
-# Trial - Almost same code as Q-learning
-# ---------------------------------------------------------
-
-def run_trial():
-
-    print("\n--- Trial Run ---")
-
-    current = 0
-    chosen_lot = random.choice(list(LOTS.values()))
-    travel_time = 0
-    steps = 0
-
-    done = False
-
-    change_environment()
-
-    while not done and steps < MAX_STEPS:
-
-        steps += 1
-
-        dist, prev = Dijkstra(current)
-
-        state = (current, chosen_lot, tuple(p_avail))
-
-        if state not in Q:
-            action = random.choice(["move", "switch", "park"])
-        else:
-            action = max(Q[state], key=Q[state].get)
-
-        print(f"\nStep {steps}")
-        print("Current node:", current)
-        print("Chosen lot:", chosen_lot)
-        print("Action:", action)
-
-        if action == "move":
-
-            if dist[chosen_lot] == float('inf'):
-                print("No route to lot.")
-                continue
-
-            next_node = get_next_node(current, chosen_lot, prev)
-
-            if next_node is None:
-                print("Path reconstruction failed.")
-                continue
-
-            edge_weight = None
-            for v, w in graph[current]:
-                if v == next_node:
-                    edge_weight = w
-                    break
-
-            if edge_weight is None:
-                print("Invalid edge.")
-                continue
-
-            level = traffic.get((current, next_node), "low")
-            factor = traffic_multiplier(level)
-
-            step_time = edge_weight * factor
-            travel_time += step_time
-
-            print("Moving to:", next_node, "| travel time:", step_time)
-
-            current = next_node
-
-        elif action == "switch":
-
-            chosen_lot = random.choice(list(LOTS.values()))
-            print("Switching lot →", chosen_lot)
-
-        else:
-
-            if current != chosen_lot:
-                print("Cannot park here.")
-                continue
-
-            idx = LOT_INDEX[current]
-
-            if p_avail[idx] == 0:
-                print("Lot full.")
-                continue
-
-            if walk_km[idx] > W_MAX:
-                print("Walking distance too far.")
-                continue
-
-            print("\nSUCCESS: parked at lot", current)
-            print("Total travel time:", travel_time)
-            print("Walking distance:", walk_km[idx])
-            print("Price:", price[idx])
-
-            done = True
-
-        change_environment()
-
-    if not done:
-        print("\nTrial failed (max steps reached)")
+        if ((ep + 1) % PERIOD == 0) :
+            print()
+            write_result(f"Trained {ep + 1} episodes")
+            msg_ep = f"Epsilon: {EPSILON:.4f}, Alpha: {ALPHA:.4f}"
+            print(msg_ep)
+            write_result(msg_ep)
+            for x in range(SAMPLE):
+                count = 0
+                for i in range(TRY):
+                    msg_try = f"Tried {i}"
+                    print(msg_try, end='\r')
+                    if (i + 1 == TRY): 
+                        write_result(msg_try)
+                    count += run_trial()
+                print()
+                print(count)
+                write_result(str(count))
 
 # ---------------------------------------------------------
 # Main
 # ---------------------------------------------------------
 def main():
+    clear_file()
+
+    global ALPHA, EPSILON, ALPHA_DECAY, EPSILON_DECAY, DECAY_PERIOD
+    alpha_msg = f"DECAY_PERIOD: {DECAY_PERIOD}, ALPHA: {ALPHA}, ALPHA_DECAY: {ALPHA_DECAY}, EPSILON: {EPSILON}, EPSILON_DECAY: {EPSILON_DECAY}"
+    print(alpha_msg)
+    write_result(alpha_msg)
 
     create_environment()
 
     q_learning_simulate()
 
-    print("\nSample Q-values:\n")
-
-    for i, (k, v) in enumerate(Q.items()):
-        print(k, v)
-        if i > 10:
-            break
-
-    print("\nTraining done")
-
-    run_trial()
+    training_done_msg = "Training done"
+    print("\n" + training_done_msg)
+    write_result(training_done_msg)
 
 if __name__ == "__main__":
+    sysargv = sys.argv
+    if (len(sysargv) > 1):
+        ALPHA = float(sysargv[1])
+        ALPHA_DECAY = float(sysargv[2])
+        EPSILON = float(sysargv[3])
+        EPSILON_DECAY = float(sysargv[4])
+        DECAY_PERIOD = int(sysargv[5])
+        OUTPUT = sysargv[6]
     main()
