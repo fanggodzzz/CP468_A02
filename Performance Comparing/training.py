@@ -21,7 +21,7 @@ GAMMA = 0.9
 EPSILON = 1.0
 EPSILON_MIN = 0.01
 EPSILON_DECAY = 0.99998
-ALPHA_MIN = 0.05    # Not used
+ALPHA_MIN = 0.01    
 ALPHA_DECAY = 0.99998
 EPISODES = 750000
 MAX_STEPS = 100
@@ -132,7 +132,7 @@ def q_learning_train(episodes, output_file, max_steps):
 
                 # Prevent parking at anywhere
                 if current != chosen_lot:
-                    r = -100
+                    r = -200
                     done = False
 
                 # Calculate reward for final state

@@ -19,7 +19,7 @@ GAMMA = 0.9
 EPSILON = 1.0
 EPSILON_MIN = 0.01
 EPSILON_DECAY = 0.99998  
-ALPHA_MIN = 0.05
+ALPHA_MIN = 0.01
 ALPHA_DECAY = 0.99998    
 EPISODES = 1000000
 MAX_STEPS = 100
@@ -317,34 +317,13 @@ def run_trial():
 
         else:
 
-            if current != chosen_lot:
-                # print("Cannot park here.")
-                continue
+            return reward(state, travel_time)
 
-            idx = LOT_INDEX[current]
-
-            if p_avail[idx] == 0:
-                # print("Lot full.")
-                # write_result("Lot full.")
-                continue
-
-            if walk_km[idx] > W_MAX:
-                # print("Walking distance too far.")
-                # write_result("Walking distance too far.")
-                continue
-
-            # print("\nSUCCESS: parked at lot", current)
-            # print("Total travel time:", travel_time)
-            # print("Walking distance:", walk_km[idx])
-            # print("Price:", price[idx])
-
-            done = True
         change_environment()
 
     if not done:
         # print("\nTrial failed (max steps reached)")
-        return 0
-    return 1
+        return -1
 
 # ---------------------------------------------------------
 # Q-learning
@@ -365,8 +344,6 @@ def q_learning_simulate():
     global EPSILON, travel_time, ALPHA
 
     actions = ["move", "switch", "park"]
-    msg = f"0, {ALPHA:.4f}, {EPSILON:.4f}, {0}, {0}, {0}, {0}"
-    write_result(msg)
     for ep in range(EPISODES):
         msg = f"Trained {ep} episodes"
         print(msg, end='\r')
@@ -485,15 +462,22 @@ def q_learning_simulate():
 
         if ((ep + 1) % PERIOD == 0) :
             avg = 0
+            avg_return = 0
             msg_ep = f"{ep + 1}, {ALPHA:.4f}, {EPSILON:.4f}"
             for _ in range(SAMPLE):
                 count = 0
+                avg_return1 = 0
                 for _ in range(TRY):
-                    count += run_trial()
+                    trial = run_trial()
+                    if (trial >=  0):
+                        count += 1
+                        avg_return1 += trial
                 avg += count
-                msg_ep += f", {count}"
+                msg_ep += f", {count}, {avg_return1 / count if count > 0 else 0:.2f}"
+                avg_return += avg_return1
+            avg_return //= avg
             avg //= SAMPLE
-            msg_ep += f", {avg}"
+            msg_ep += f", {avg}, {avg_return:.2f}"
             write_result(msg_ep)
 
 # ---------------------------------------------------------
@@ -504,7 +488,7 @@ def main():
 
     global ALPHA, EPSILON, ALPHA_DECAY, EPSILON_DECAY, DECAY_PERIOD
 
-    table_header = "Alpha, Epsilon, Trial 1, Trial 2, Trial 3, Average"
+    table_header = "Alpha, Epsilon, Trial 1, Avg 1, Trial 2, Avg 2, Trial 3, Avg 3, AverageSuccess, AverageReturn"
     write_result(table_header)
 
     create_environment()

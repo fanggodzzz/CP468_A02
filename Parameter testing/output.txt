@@ -1,2 +1,2 @@
-Alpha, Epsilon, Trial 1, Trial 2, Trial 3, Average
-0, 0.5000, 1.0000, 0, 0, 0, 0
+Alpha, Epsilon, Trial 1, Avg 1, Trial 2, Avg 2, Trial 3, Avg 3, AverageSuccess, AverageReturn
+10000, 0.4094, 0.8187, 9964, 363.79, 9967, 364.29, 9962, 364.58, 9964, 364.00
