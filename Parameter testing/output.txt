@@ -1,0 +1,2 @@
+Alpha, Epsilon, Trial 1, Trial 2, Trial 3, Average
+0, 0.5000, 1.0000, 0, 0, 0, 0
