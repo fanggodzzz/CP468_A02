@@ -1,3 +1,4 @@
+import argparse
 import random
 import heapq
 import sys
@@ -9,72 +10,74 @@ import os
 W_MAX = 10
 LAMBDA_WALK = 10.0
 LAMBDA_PRICE = 1.0
-PENALTY = 5000  #Important 
+PENALTY = 5000
 
 # ---------------------------------------------------------
-# Q-learning parameters
+# Q-learning parameters 
 # ---------------------------------------------------------
-ALPHA = 0.5
-GAMMA = 0.9
+EPISODES = 500000
+MAX_STEPS = 100
+PERIOD = 5000
+SAMPLE = 5000
+TRY = 3
+
+ALPHA = 0.1
+ALPHA_MIN = 0.01
+ALPHA_DECAY = 1.0   # no decay
+
 EPSILON = 1.0
 EPSILON_MIN = 0.01
-EPSILON_DECAY = 0.99998  
-ALPHA_MIN = 0.01
-ALPHA_DECAY = 0.99998    
-EPISODES = 1000000
-MAX_STEPS = 100
-TRY = 10000
-PERIOD = 10000
-SAMPLE = 3
-DECAY_PERIOD = -1
+EPSILON_DECAY_PERIOD = 100000
+
+EPSILON_DECAY = (EPSILON_MIN / EPSILON) ** (1 / EPSILON_DECAY_PERIOD)
+GAMMA = 0.9
+
+# Controlled dynamic environment, change by 25% chance
+ENV_CHANGE_PROB = 0.25
 
 script_dir = os.path.dirname(__file__)
-OUTPUT = os.path.join(script_dir, "output.txt")
+OUTPUT_FILE = "output.txt"
+OUTPUT = os.path.join(script_dir, OUTPUT_FILE)
+
 # ---------------------------------------------------------
 # Environment
 # ---------------------------------------------------------
 LOTS = {"1": 21, "2": 22, "3": 23, "4": 24, "5": 25}
-
-# reverse map for fast lookup
 LOT_INDEX = {v: i for i, v in enumerate(LOTS.values())}
 
-p_avail = [1, 1, 1, 1, 1]
-walk_km = [0, 0, 0, 0, 0]
-price = [0, 0, 0, 0, 0]
+p_avail = [1] * 6
+walk_km = [0] * 6
+price = [0] * 6
 
 graph = {}
 traffic = {}
 Q = {}
 
-travel_time = 0
-
 # ---------------------------------------------------------
-# Clear output file
+# File utils
 # ---------------------------------------------------------
 def clear_file():
     with open(OUTPUT, "w") as f:
         f.write("")
 
-# ---------------------------------------------------------
-# Write result to OUTPUT file
-# ---------------------------------------------------------
 def write_result(log):
     with open(OUTPUT, "a") as f:
         f.write(f"{log}\n")
 
 # ---------------------------------------------------------
-# Read graph
-# In this code, the graph is undirected, but can still 
-# work with directed graph
+# Graph
 # ---------------------------------------------------------
-
 def read_graph(filename="graph.txt"):
+    """
+    Read graph from file.
+    
+    The graph is undirected and stored as an adjacency list.
+    """
     global graph
     graph = {}
 
     with open(filename, "r") as f:
         n, m = map(int, f.readline().split())
-
         for i in range(n):
             graph[i] = []
 
@@ -87,25 +90,27 @@ def read_graph(filename="graph.txt"):
 # Traffic
 # ---------------------------------------------------------
 def traffic_multiplier(level):
-    if level == "low":
-        return 1
-    elif level == "medium":
-        return 3
-    else:
-        return 7
+    """
+    Get traffic multiplier based on level.
+    
+    Args:
+        level (str): Traffic level ("low", "medium", "high").
+    
+    Returns:
+        int: Multiplier for edge weight (1, 3, or 7).
+    """
+    return {"low": 1, "medium": 3, "high": 7}[level]
 
 def randomize_traffic():
     """
-    Randomize the traffic
+    Randomize the traffic for edges in the graph.
     """
-
     global traffic
     traffic = {}
 
     for u in graph:
-        for v, w in graph[u]:
-            if random.random() < 0.3:
-                traffic[(u, v)] = random.choice(["low", "medium", "high"])
+        for v, _ in graph[u]:
+            traffic[(u, v)] = random.choice(["low", "medium", "high"])
 
 # ---------------------------------------------------------
 # Environment
@@ -127,35 +132,29 @@ def create_environment():
 
     Then call change_environment()
     """
-
     read_graph()
 
-    for i in range(5):
-        if i < 3:
+    for i in range(1, 6):
+        if i <= 3:
             walk_km[i] = random.randint(1, W_MAX)
         else:
             walk_km[i] = random.randint(W_MAX + 10, W_MAX + 20)
 
-    change_environment()
+    change_environment(force=True)
 
-def change_environment():
+def change_environment(force=False):
     """
-    Create the dynamicity for the environment
+    Create or update the dynamic environment.
 
-    * Parking lot dynamicity:
-        - Random the availability (0 / 1)
-        - Random the price (10 - 15)
-
-    * Trafic dynamicity
-        - Change traffic for each edge:
-            + Low:     0 (weight * 1)
-            + Medium:  1 (weight * 3)
-            + High:    2 (weight * 7)
+    If force is False, the environment only changes with probability ENV_CHANGE_PROB.
+    If force is True, the environment changes unconditionally.
     """
+    if not force and random.random() >= ENV_CHANGE_PROB:
+        return
 
     global p_avail, price
 
-    for i in range(5):
+    for i in range(1, 6):
         p_avail[i] = random.choice([0, 1])
         price[i] = random.randint(10, 15)
 
@@ -168,7 +167,6 @@ def Dijkstra(start):
     """
     Compute shortest path with dynamic traffic
     """
-
     dist = {i: float('inf') for i in graph}
     prev = {i: None for i in graph}
     dist[start] = 0
@@ -179,11 +177,8 @@ def Dijkstra(start):
         d, u = heapq.heappop(pq)
 
         for v, w in graph[u]:
-
             level = traffic.get((u, v), "low")
-
-            factor = traffic_multiplier(level)
-            new_w = w * factor
+            new_w = w * traffic_multiplier(level)
 
             if dist[v] > d + new_w:
                 dist[v] = d + new_w
@@ -192,19 +187,14 @@ def Dijkstra(start):
 
     return dist, prev
 
-# ---------------------------------------------------------
-# Helper
-# ---------------------------------------------------------
 def get_next_node(current, target, prev):
     """
     Get next step toward target using shortest path
     """
-
     if prev[target] is None:
         return None
 
     path = []
-
     while target != current:
         path.append(target)
         target = prev[target]
@@ -212,118 +202,102 @@ def get_next_node(current, target, prev):
     return path[-1]
 
 # ---------------------------------------------------------
-# Reward
+# State
+# ---------------------------------------------------------
+def is_current_lot_full(chosen_lot):
+    if chosen_lot not in LOTS.values():
+        return True
+    idx = LOT_INDEX[chosen_lot]
+    return p_avail[idx] == 0 or walk_km[idx] > W_MAX
+
+def is_any_lot_available_nearby(dist, chosen_lot):
+    chosen_dist = dist.get(chosen_lot, float('inf'))
+    if chosen_dist == float('inf'):
+        return False
+
+    threshold = chosen_dist // 2 * 3  # Nearby means not farther than 1.5 times the current distance
+    for lot_node in LOTS.values():
+        idx = LOT_INDEX[lot_node]
+        if p_avail[idx] == 1 and walk_km[idx] <= W_MAX:
+            lot_dist = dist.get(lot_node, float('inf'))
+            if lot_dist != float('inf') and lot_dist <= threshold:
+                return True
+    return False
+
+def create_state(current_node, chosen_lot, dist):
+    return (
+        current_node,
+        chosen_lot,
+        is_current_lot_full(chosen_lot),
+        is_any_lot_available_nearby(dist, chosen_lot)
+    )
+
+# ---------------------------------------------------------
+# Reward at final state
 # ---------------------------------------------------------
 def reward(state, travel_time):
-    """
-    Immediate reward for each state
+    current_node, chosen_lot, is_lot_full, _ = state
 
-    state = (node, chosen_lot)
-
-    If node is not parking lot --> return 0
-    Else at parking lot:
-        - plus 500 if the the lot is available (avail = 1)
-        - minus 10^6 if the the lot is not available (avail = 0) 
-            or parking lot is out of max distance (walk_km > W_MAX)
-        - minus time travels from node 0 to the parking lot
-        - minus the price of the parking lot 
-        - minus the walking distance to destination D
-    """
-
-    node, chosen_lot, avail_tuple = state
-
-    if node not in LOTS.values() or node != chosen_lot:
+    if current_node != chosen_lot:
         return -PENALTY
 
-    idx = LOT_INDEX[node]
+    idx = LOT_INDEX[current_node]
 
-    if avail_tuple[idx] == 0 or walk_km[idx] > W_MAX:
+    if is_lot_full:
         return -PENALTY
 
     return 500 - travel_time - LAMBDA_WALK * walk_km[idx] - LAMBDA_PRICE * price[idx]
 
 # ---------------------------------------------------------
-# Trial - Almost same code as Q-learning
+# Trial
 # ---------------------------------------------------------
-
 def run_trial():
-
-    # print("\n--- Trial Run ---")
-
     current = 0
     chosen_lot = random.choice(list(LOTS.values()))
     travel_time = 0
     steps = 0
 
-    done = False
-
     change_environment()
 
-    while not done and steps < MAX_STEPS:
-
+    while steps < MAX_STEPS:
         steps += 1
 
         dist, prev = Dijkstra(current)
+        state = create_state(current, chosen_lot, dist)
 
-        state = (current, chosen_lot, tuple(p_avail))
-
-        if state not in Q:
+        if state not in Q or random.random() < 0.1:
             action = random.choice(["move", "switch", "park"])
         else:
             action = max(Q[state], key=Q[state].get)
 
-        # print(f"\nStep {steps}")
-        # print("Current node:", current)
-        # print("Chosen lot:", chosen_lot)
-        # print("Action:", action)
-
         if action == "move":
-
             if dist[chosen_lot] == float('inf'):
-                # print("No route to lot.")
-                continue
+                return -1
 
             next_node = get_next_node(current, chosen_lot, prev)
-
             if next_node is None:
-                # print("Path reconstruction failed.")
-                continue
+                return -1
 
-            edge_weight = None
-            for v, w in graph[current]:
-                if v == next_node:
-                    edge_weight = w
-                    break
-
+            edge_weight = next((w for v, w in graph[current] if v == next_node), None)
             if edge_weight is None:
-                # print("Invalid edge.")
-                # write_result("Invalid edge.")
-                continue
+                return -1
 
-            level = traffic.get((current, next_node), "low")
-            factor = traffic_multiplier(level)
-
+            factor = traffic_multiplier(traffic.get((current, next_node), "low"))
             step_time = edge_weight * factor
+
             travel_time += step_time
-
-            # print("Moving to:", next_node, "| travel time:", step_time)
-
             current = next_node
 
         elif action == "switch":
-
             chosen_lot = random.choice(list(LOTS.values()))
-            # print("Switching lot →", chosen_lot)
 
         else:
+            return max(reward(state, travel_time), -1)
 
-            return reward(state, travel_time)
+        if random.random() < ENV_CHANGE_PROB:
+            change_environment()
 
-        change_environment()
-
-    if not done:
-        # print("\nTrial failed (max steps reached)")
-        return -1
+    return -1
 
 # ---------------------------------------------------------
 # Q-learning
@@ -333,42 +307,32 @@ def q_learning_simulate():
     Q-learning simulation
 
     * State:
-        current node
-        chosen parking lot
-        Availability of each parking lot
+        (current_node, chosen_lot, is_current_lot_full, is_any_lot_available_nearby)
     * Action: 
         - Move to next node (Use Dijkstra to determine the path and move to the next node)
         - Change parking lot
         - Parking - Done 
     """
-    global EPSILON, travel_time, ALPHA
+    global EPSILON, ALPHA
 
     actions = ["move", "switch", "park"]
+
     for ep in range(EPISODES):
-        msg = f"Trained {ep} episodes"
-        print(msg, end='\r')
+        print(f"Trained {ep}", end='\r')
+
         current = 0
         chosen_lot = random.choice(list(LOTS.values()))
-        done = False
-        steps = 0
-
         travel_time = 0
 
-        # Initialize new environment for new episode
-        change_environment() 
-        
-        while not done and steps < MAX_STEPS:
+        change_environment()
 
-            steps += 1
-
+        for _ in range(MAX_STEPS):
             dist, prev = Dijkstra(current)
-
-            state = (current, chosen_lot, tuple(p_avail))
+            state = create_state(current, chosen_lot, dist)
 
             if state not in Q:
                 Q[state] = {a: 0 for a in actions}
 
-            # e-greedy
             if random.random() < EPSILON:
                 action = random.choice(actions)
             else:
@@ -376,67 +340,39 @@ def q_learning_simulate():
 
             # Action: Move
             if action == "move":
-                # Prevent moving if at the parking lot
-                if current == chosen_lot:  
+                if current == chosen_lot or dist[chosen_lot] == float('inf'):
                     r = -100
-                    next_state = (current, chosen_lot, tuple(p_avail))
-                    done = False
-
-                # Prevent further running if not reaching the lot
-                elif dist[chosen_lot] == float('inf'):  
-                    r = -100
-                    next_state = (current, chosen_lot, tuple(p_avail))
-                    done = False
-
+                    done = True
                 else:
-                    # Get the next node on the shortest path
-                    next_node = get_next_node(current, chosen_lot, prev) 
+                    next_node = get_next_node(current, chosen_lot, prev)
 
-                    # Get the weight and calculate the time travel for that edge
-                    edge_weight = None 
-                    for v, w in graph[current]:
-                        if v == next_node:
-                            edge_weight = w
-                            break
+                    edge_weight = next((w for v, w in graph[current] if v == next_node), None)
 
-                    level = traffic.get((current, next_node), "low")
-                    factor = traffic_multiplier(level)
-                    step_time = edge_weight * factor
+                    if edge_weight is None:
+                        r = -100
+                        done = True
+                    else:
+                        factor = traffic_multiplier(traffic.get((current, next_node), "low"))
+                        step_time = edge_weight * factor
 
-                    # Calculate the cumulative time travel
-                    travel_time += step_time 
+                        travel_time += step_time
+                        current = next_node
 
-                    # Transition
-                    next_state = (next_node, chosen_lot, tuple(p_avail))
-                    r = -step_time
-                    done = False
+                        r = -step_time * 0.1
+                        done = False
 
             # Action: Switch
             elif action == "switch":
-
                 chosen_lot = random.choice(list(LOTS.values()))
-
-                next_state = (current, chosen_lot, tuple(p_avail))
-
-                # Small penalty for switching
                 r = -5
-                  
                 done = False
 
             # Action: Park
             else:
+                r = reward(state, travel_time)
+                done = True
 
-                next_state = (current, chosen_lot, tuple(p_avail))
-
-                # Prevent parking at anywhere    
-                if current != chosen_lot:
-                    r = -200
-                    done = False
-                
-                #Calculate reward for final state
-                else:
-                    r = reward(next_state, travel_time)
-                    done = True
+            next_state = create_state(current, chosen_lot, dist)
 
             if next_state not in Q:
                 Q[next_state] = {a: 0 for a in actions}
@@ -447,27 +383,23 @@ def q_learning_simulate():
                 r + GAMMA * max_next - Q[state][action]
             )
 
-            current = next_state[0]
+            if random.random() < ENV_CHANGE_PROB:
+                change_environment()
 
-            # Make the environment dynamically
-            change_environment()
+            if done:
+                break
 
-        # Reduce epsilon per episode
-        if EPSILON > EPSILON_MIN:
-            EPSILON *= EPSILON_DECAY
-
-        # Reduce alpha per episode 
-        if ALPHA > ALPHA_MIN:
-            ALPHA*= ALPHA_DECAY
+        EPSILON = max(EPSILON_MIN, EPSILON * EPSILON_DECAY)
+        ALPHA = max(ALPHA_MIN, ALPHA * ALPHA_DECAY)
 
         if ((ep + 1) % PERIOD == 0) :
             avg = 0
             avg_return = 0
             msg_ep = f"{ep + 1}, {ALPHA:.4f}, {EPSILON:.4f}"
-            for _ in range(SAMPLE):
+            for _ in range(TRY):
                 count = 0
                 avg_return1 = 0
-                for _ in range(TRY):
+                for _ in range(SAMPLE):
                     trial = run_trial()
                     if (trial >=  0):
                         count += 1
@@ -484,24 +416,21 @@ def q_learning_simulate():
 # Main
 # ---------------------------------------------------------
 def main():
+    """
+    Main function to run the Q-learning training.
+    """
+
     clear_file()
 
-    global ALPHA, EPSILON, ALPHA_DECAY, EPSILON_DECAY, DECAY_PERIOD
-
-    table_header = "Alpha, Epsilon, Trial 1, Avg 1, Trial 2, Avg 2, Trial 3, Avg 3, AverageSuccess, AverageReturn"
-    write_result(table_header)
+    msg = "Alpha, Epsilon, Trial 1, Avg 1, Trial 2, Avg 2, Trial 3, Avg 3, AverageSuccess, AverageReturn"
+    write_result(msg)
 
     create_environment()
-
     q_learning_simulate()
 
 if __name__ == "__main__":
-    sysargv = sys.argv
-    if (len(sysargv) > 1):
-        ALPHA = float(sysargv[1])
-        ALPHA_DECAY = float(sysargv[2])
-        EPSILON = float(sysargv[3])
-        EPSILON_DECAY = float(sysargv[4])
-        OUTPUT = sysargv[5]
-        OUTPUT = os.path.join(script_dir, OUTPUT)
+    # EPSILON_DECAY_PERIOD = sys.argv[1]
+    # EPSILON_DECAY = (EPSILON_MIN / EPSILON) ** (1 / EPSILON_DECAY_PERIOD)
+    # OUTPUT_FILE = sys.argv[2]
+    # OUTPUT = os.path.join(script_dir, OUTPUT_FILE)
     main()
