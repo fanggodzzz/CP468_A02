@@ -28,7 +28,7 @@ def run_trial_with_q(q_table, max_steps):
         steps += 1
 
         dist, prev = env.Dijkstra(current)
-        state = (current, chosen_lot, tuple(env.p_avail))
+        state = env.create_state(current, chosen_lot, dist, prev)
 
         if state in q_table:
             action = max(q_table[state], key=q_table[state].get)

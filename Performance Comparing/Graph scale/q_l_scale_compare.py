@@ -1,7 +1,6 @@
 import argparse
 import random
 import heapq
-import sys
 import os
 
 # ---------------------------------------------------------
@@ -27,7 +26,7 @@ ALPHA_DECAY = 1.0   # no decay
 
 EPSILON = 1.0
 EPSILON_MIN = 0.01
-EPSILON_DECAY_PERIOD = 200000
+EPSILON_DECAY_PERIOD = 100000
 
 EPSILON_DECAY = (EPSILON_MIN / EPSILON) ** (1 / EPSILON_DECAY_PERIOD)
 GAMMA = 0.9
@@ -37,17 +36,18 @@ ENV_CHANGE_PROB = 0.5
 
 script_dir = os.path.dirname(__file__)
 OUTPUT_FILE = "output.txt"
-OUTPUT = os.path.join(script_dir, OUTPUT_FILE)
+OUTPUT = None
 
 # ---------------------------------------------------------
 # Environment
 # ---------------------------------------------------------
-LOTS = {"0": 21, "1": 22, "2": 23, "3": 24, "4": 25}
-LOT_INDEX = {v: i for i, v in enumerate(LOTS.values())}
+PARKING_LOTS = []
+INVALID_LOTS = []
+LOT_INDEX = {}
 
-p_avail = [1] * 5
-walk_km = [0] * 5
-price = [0] * 5
+p_avail = []
+walk_km = []
+price = []
 
 graph = {}
 traffic = {}
@@ -56,42 +56,93 @@ Q = {}
 # ---------------------------------------------------------
 # File utils
 # ---------------------------------------------------------
+
 def clear_file():
-    with open(OUTPUT, "w") as f:
+    if OUTPUT is None:
+        raise RuntimeError("Output file is not configured")
+    with open(OUTPUT, "w", encoding="utf-8") as f:
         f.write("")
 
+
 def write_result(log):
-    with open(OUTPUT, "a") as f:
+    if OUTPUT is None:
+        raise RuntimeError("Output file is not configured")
+    with open(OUTPUT, "a", encoding="utf-8") as f:
         f.write(f"{log}\n")
 
 # ---------------------------------------------------------
 # Graph
 # ---------------------------------------------------------
-def read_graph(filename="graph.txt"):
-    """
-    Read graph from file.
-    
-    The graph is undirected and stored as an adjacency list.
-    """
-    global graph
-    graph = {}
 
-    with open(filename, "r") as f:
-        n, m = map(int, f.readline().split())
+def read_graph(filename):
+    """Read graph from file.
+
+    Format:
+        n m p in
+        a1 a2 ... ap
+        b1 b2 ... bin
+        u1 v1 w1
+        ...
+    """
+    global graph, PARKING_LOTS, INVALID_LOTS, LOT_INDEX, p_avail, walk_km, price
+
+    graph = {}
+    PARKING_LOTS = []
+    INVALID_LOTS = []
+    LOT_INDEX = {}
+    p_avail = []
+    walk_km = []
+    price = []
+
+    if not os.path.isabs(filename):
+        filename = os.path.join(script_dir, filename)
+
+    with open(filename, "r", encoding="utf-8") as f:
+        first_line = f.readline()
+        first_line = first_line.lstrip('\ufeff')
+        header = first_line.strip().split()
+        if len(header) < 4:
+            raise ValueError("Graph file header must contain n, m, p, in")
+
+        n, m, p_count, invalid_count = map(int, header[:4])
+
+        parking_nodes = [int(x) for x in f.readline().strip().split() if x.strip()]
+        invalid_nodes = [int(x) for x in f.readline().strip().split() if x.strip()]
+
+        if len(parking_nodes) != p_count:
+            raise ValueError(
+                f"Graph file parking list length {len(parking_nodes)} does not match header p={p_count}"
+            )
+
+        if len(invalid_nodes) != invalid_count:
+            raise ValueError(
+                f"Graph file invalid list length {len(invalid_nodes)} does not match header in={invalid_count}"
+            )
+
+        PARKING_LOTS = parking_nodes
+        INVALID_LOTS = invalid_nodes
+        LOT_INDEX = {lot: i for i, lot in enumerate(PARKING_LOTS)}
+        p_avail = [1] * len(PARKING_LOTS)
+        walk_km = [0] * len(PARKING_LOTS)
+        price = [0] * len(PARKING_LOTS)
+
         for i in range(n):
             graph[i] = []
 
         for _ in range(m):
-            u, v, w = map(int, f.readline().split())
+            line = f.readline().strip()
+            if not line:
+                continue
+            u, v, w = map(int, line.split())
             graph[u].append((v, w))
             graph[v].append((u, w))
 
 # ---------------------------------------------------------
 # Traffic
 # ---------------------------------------------------------
+
 def traffic_multiplier(level):
-    """
-    Get traffic multiplier based on level.
+    """Get traffic multiplier based on level.
     
     Args:
         level (str): Traffic level ("low", "medium", "high").
@@ -101,10 +152,9 @@ def traffic_multiplier(level):
     """
     return {"low": 1, "medium": 3, "high": 7}[level]
 
+
 def randomize_traffic():
-    """
-    Randomize the traffic for edges in the graph.
-    """
+    """Randomize the traffic for edges in the graph."""
     global traffic
     traffic = {}
 
@@ -115,30 +165,26 @@ def randomize_traffic():
 # ---------------------------------------------------------
 # Environment
 # ---------------------------------------------------------
-def create_environment():
-    """
-    Create dynamic environment for Q-learning simulation
-    """
-    read_graph()
 
-    for i in range(5):
-        if i < 3:
-            walk_km[i] = random.randint(1, W_MAX)
-        else:
+def create_environment(graph_filename):
+    """Create dynamic environment for Q-learning simulation"""
+    read_graph(graph_filename)
+
+    for i, lot in enumerate(PARKING_LOTS):
+        if lot in INVALID_LOTS:
             walk_km[i] = random.randint(W_MAX + 10, W_MAX + 20)
+        else:
+            walk_km[i] = random.randint(1, W_MAX)
 
     change_environment(force=True)
 
+
 def change_environment(force=False):
-    """
-    Create or update the dynamic environment.
-    """
+    """Create or update the dynamic environment."""
     if not force and random.random() >= ENV_CHANGE_PROB:
         return
 
-    global p_avail, price
-
-    for i in range(5):
+    for i in range(len(PARKING_LOTS)):
         p_avail[i] = random.choice([0, 1])
         price[i] = random.randint(10, 15)
 
@@ -147,11 +193,10 @@ def change_environment(force=False):
 # ---------------------------------------------------------
 # Dijkstra
 # ---------------------------------------------------------
+
 def Dijkstra(start):
-    """
-    Compute shortest path with dynamic traffic
-    """
-    dist = {i: float('inf') for i in graph}
+    """Compute shortest path with dynamic traffic"""
+    dist = {i: float("inf") for i in graph}
     prev = {i: None for i in graph}
     dist[start] = 0
 
@@ -159,6 +204,9 @@ def Dijkstra(start):
 
     while pq:
         d, u = heapq.heappop(pq)
+
+        if d > dist[u]:
+            continue
 
         for v, w in graph[u]:
             level = traffic.get((u, v), "low")
@@ -171,13 +219,12 @@ def Dijkstra(start):
 
     return dist, prev
 
+
 def get_next_node(current, target, prev):
-    """
-    Get next step toward target using shortest path
-    """
+    """Get next step toward target using shortest path"""
     if current == target:
         return None
-    
+
     if prev[target] is None:
         return None
 
@@ -186,7 +233,7 @@ def get_next_node(current, target, prev):
     while node != current and node is not None:
         path.append(node)
         node = prev[node]
-    
+
     if node is None:
         return None
 
@@ -197,22 +244,15 @@ def get_next_node(current, target, prev):
 # ---------------------------------------------------------
 
 def is_current_lot_full(chosen_lot):
-    if chosen_lot not in LOTS.values():
+    """Check if the chosen lot is unavailable (full or invalid)."""
+    if chosen_lot not in LOT_INDEX:
         return True
     idx = LOT_INDEX[chosen_lot]
     return p_avail[idx] == 0 or walk_km[idx] > W_MAX
 
 
 def get_travel_time_bin(current_node, chosen_lot, dist):
-    """
-    Travel time to destination (chosen lot) using precomputed dist.
-
-    Bins:
-        0: near (<= 20)
-        1: medium (20 - 50)
-        2: far (50+)
-    """
-    travel_time = dist.get(chosen_lot, float('inf'))
+    travel_time = dist.get(chosen_lot, float("inf"))
 
     if travel_time <= 20:
         return 0
@@ -221,21 +261,12 @@ def get_travel_time_bin(current_node, chosen_lot, dist):
     else:
         return 2
 
+
 def get_availability_level():
-    """
-    Availability = (# available & valid lots) / (# valid lots)
-
-    Valid lot = walk_km <= W_MAX
-
-    Levels:
-        0: low    (<= 30%)
-        1: medium (30% - 75%)
-        2: high   (> 75%)
-    """
     valid = 0
     available = 0
 
-    for i in range(5):
+    for i in range(len(PARKING_LOTS)):
         if walk_km[i] <= W_MAX:
             valid += 1
             if p_avail[i] == 1:
@@ -255,15 +286,7 @@ def get_availability_level():
 
 
 def get_traffic_level(current_node, chosen_lot, dist, prev):
-    """
-    Average traffic along shortest path → discretized
-
-    Output:
-        1: low
-        2: medium
-        3: heavy
-    """
-    if dist.get(chosen_lot, float('inf')) == float('inf'):
+    if dist.get(chosen_lot, float("inf")) == float("inf"):
         return 3
 
     path = []
@@ -301,17 +324,6 @@ def get_traffic_level(current_node, chosen_lot, dist, prev):
 
 
 def create_state(current_node, chosen_lot, dist, prev):
-    """
-    State:
-        (
-            current_node,
-            chosen_lot,
-            is_current_lot_full,
-            travel_time_bin,
-            availability_level,
-            traffic_level
-        )
-    """
     return (
         current_node,
         chosen_lot,
@@ -324,12 +336,13 @@ def create_state(current_node, chosen_lot, dist, prev):
 # ---------------------------------------------------------
 # Reward for final state
 # ---------------------------------------------------------
+
 def reward(state, travel_time):
     current_node, chosen_lot, is_lot_full, *_ = state
 
     if current_node != chosen_lot:
         return -PENALTY
-    
+
     if current_node not in LOT_INDEX:
         return -PENALTY
 
@@ -343,9 +356,11 @@ def reward(state, travel_time):
 # ---------------------------------------------------------
 # Trial
 # ---------------------------------------------------------
+
 def run_trial():
+    """Run a trial using the trained Q-table."""
     current = 0
-    chosen_lot = random.choice(list(LOTS.values()))
+    chosen_lot = random.choice(PARKING_LOTS)
     travel_time = 0
     steps = 0
 
@@ -357,13 +372,13 @@ def run_trial():
         dist, prev = Dijkstra(current)
         state = create_state(current, chosen_lot, dist, prev)
 
-        if state not in Q :
+        if state not in Q:
             return -1
-        
+
         action = max(Q[state], key=Q[state].get)
 
         if action == "move":
-            if current == chosen_lot or dist[chosen_lot] == float('inf'):
+            if current == chosen_lot or dist[chosen_lot] == float("inf"):
                 return -1
 
             next_node = get_next_node(current, chosen_lot, prev)
@@ -377,7 +392,7 @@ def run_trial():
             current = next_node
 
         elif action == "switch":
-            chosen_lot = random.choice(list(LOTS.values()))
+            chosen_lot = random.choice(PARKING_LOTS)
 
         else:
             return max(reward(state, travel_time), -1)
@@ -389,9 +404,9 @@ def run_trial():
 # ---------------------------------------------------------
 # Q-learning
 # ---------------------------------------------------------
+
 def q_learning_simulate():
-    """
-    Q-learning simulation
+    """Q-learning simulation
 
     * State:
         (
@@ -411,7 +426,7 @@ def q_learning_simulate():
         print(f"Trained {ep + 1}", end='\r')
 
         current = 0
-        chosen_lot = random.choice(list(LOTS.values()))
+        chosen_lot = random.choice(PARKING_LOTS)
         travel_time = 0
 
         change_environment(force=True)
@@ -431,7 +446,7 @@ def q_learning_simulate():
                 action = max(Q[state], key=Q[state].get)
 
             if action == "move":
-                if current == chosen_lot or dist[chosen_lot] == float('inf'):
+                if current == chosen_lot or dist[chosen_lot] == float("inf"):
                     r = -50
                     done = True
                 else:
@@ -444,14 +459,13 @@ def q_learning_simulate():
                     travel_time += step_time
                     current = next_node
 
-                    #Recompute after changing node
                     dist, prev = Dijkstra(current)
 
                     r = -step_time * 0.1
                     done = False
 
             elif action == "switch":
-                chosen_lot = random.choice(list(LOTS.values()))
+                chosen_lot = random.choice(PARKING_LOTS)
                 r = -5
                 done = False
 
@@ -477,8 +491,8 @@ def q_learning_simulate():
 
         EPSILON = max(EPSILON_MIN, EPSILON * EPSILON_DECAY)
         ALPHA = max(ALPHA_MIN, ALPHA * ALPHA_DECAY)
-        
-        if (((ep + 1 <= 20000) and (ep + 1) % 500 == 0) or (ep + 1) % PERIOD == 0) :
+
+        if (((ep + 1 <= 20000) and (ep + 1) % 500 == 0) or (ep + 1) % PERIOD == 0):
             avg = 0
             avg_return = 0
             msg_ep = f"{ep + 1}, {ALPHA:.4f}, {EPSILON:.4f}"
@@ -487,7 +501,7 @@ def q_learning_simulate():
                 avg_return1 = 0
                 for _ in range(SAMPLE):
                     trial = run_trial()
-                    if (trial >=  0):
+                    if trial >= 0:
                         count += 1
                         avg_return1 += trial
                 avg += count
@@ -502,19 +516,27 @@ def q_learning_simulate():
 # ---------------------------------------------------------
 # Main
 # ---------------------------------------------------------
-def main():
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train a Q-learning model using a graph input file.")
+    parser.add_argument("graph_file", help="Path to the graph input file")
+    parser.add_argument("output_file", help="Path to the output result file")
+    return parser.parse_args()
 
-    """
-    Main function to run the Q-learning training.
-    """
+
+def main():
+    global OUTPUT
+    args = parse_args()
+    graph_path = args.graph_file if os.path.isabs(args.graph_file) else os.path.join(script_dir, args.graph_file)
+    OUTPUT = args.output_file if os.path.isabs(args.output_file) else os.path.join(script_dir, args.output_file)
 
     clear_file()
 
     msg = "Trial#, Alpha, Epsilon, Trial 1, Avg 1, Trial 2, Avg 2, Trial 3, Avg 3, AverageSuccess, AverageReturn"
     write_result(msg)
 
-    create_environment()
+    create_environment(graph_path)
     q_learning_simulate()
+
 
 if __name__ == "__main__":
     main()

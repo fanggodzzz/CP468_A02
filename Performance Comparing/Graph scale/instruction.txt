@@ -1,0 +1,57 @@
+INPUT FILE FORMAT: (graph text file)
+
+*Problem use weighted non-directed graph
+*Driver will start at node 0
+
+- Notes:
+    n: number of vertices
+    m: number of edges
+    p: number of parking lots
+    in: number of invalid parking lots (farther than max walking distance)
+
+    a1 a2 ... ap: list of parking lots nodes
+    b1 b2 ... bp: list of invalid parking nodes
+    u v w: edge (u, v) with weight w 
+
+- Format:
+n m p in
+a1 a2 ... ap
+b1 b2 ... bp
+u1 v1 w1 
+...
+um vm wm
+
+=====================================================================
+
+OUTPUT FILE FORMAT: (output file for corresponding graph text file)
+
+- Used the csv format to extract values in excel:
+    + First line is used for headers
+    + Following lines is for data
+
+=====================================================================
+
+COMPILING q_l_scale_compare.py:
+
+Use this command to compile:
+
+python q_l_scale_compare.py <graph_file> <output_file>
+
+=====================================================================
+
+PARALLEL TRAINING(For different graph files)
+
+- Fill in the "parallel_input.txt" file, format:
+
+<number of test sets>
+
+<graph_file_1> <output_file_1>
+..
+<graph_file_n> <output_file_n>
+
+- Compile "parallel_training.py" and get the corresponding numbers
+    of output files'
+
+- IMPORTANT !!!: 
+    Parallel training use multiprocessing, be careful about
+    numbers of test sets.

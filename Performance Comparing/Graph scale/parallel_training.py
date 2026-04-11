@@ -1,9 +1,10 @@
-import os
+﻿import os
+import sys
 import subprocess
 from multiprocessing import Pool, cpu_count
 
 script_dir = os.path.dirname(__file__)
-INPUT_FILE = os.path.join(script_dir, "input.txt")
+INPUT_FILE = os.path.join(script_dir, "parallel_input.txt")
 
 
 def read_training_config(input_file=INPUT_FILE):
@@ -19,59 +20,56 @@ def read_training_config(input_file=INPUT_FILE):
     try:
         n = int(lines[0])
     except ValueError as ex:
-        raise ValueError("First line of input file must be an integer (number of trainers)") from ex
+        raise ValueError("First line of input file must be an integer (number of test sets)") from ex
 
     if n < 1:
         raise ValueError("Number of training jobs must be at least 1")
 
     if len(lines) < n + 1:
-        raise ValueError(f"Input file must contain {n} parameter lines after the first line")
+        raise ValueError(f"Input file must contain {n} graph/output lines after the first line")
 
     configs = []
     for i in range(1, n + 1):
         parts = lines[i].split()
-        if len(parts) != 4:
-            raise ValueError(f"Line {i+1} must contain 4 values: ALPHA ALPHA_DECAY EPSILON EPSILON_DECAY")
+        if len(parts) != 2:
+            raise ValueError(f"Line {i+1} must contain 2 values: graph_file output_file")
 
-        alpha, alpha_decay, epsilon, epsilon_decay = parts
-        configs.append((i, float(alpha), float(alpha_decay), float(epsilon), float(epsilon_decay)))
+        graph_file, output_file = parts
+        configs.append((i, graph_file, output_file))
 
     return configs
 
 
 def run_training_job(args):
-    # args = (idx, alpha, alpha_decay, epsilon, epsilon_decay, decay_period)
-    idx, alpha, alpha_decay, epsilon, epsilon_decay = args
-    output_file = f"OUTPUT_{idx}.txt"
+    idx, graph_file, output_file = args
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     cmd = [
-        "python",
-        os.path.join(script_dir, "q_l_parking_test.py"),
-        str(alpha),
-        str(alpha_decay),
-        str(epsilon),
-        str(epsilon_decay),
-        output_file
+        sys.executable,
+        "q_l_scale_compare.py",
+        graph_file,
+        output_file,
     ]
-    output_file = os.path.join(script_dir, output_file)
+
     print(f"[Job {idx}] Starting: {cmd}")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
 
-        with open(output_file, "a", encoding="utf-8") as f:
-            # f.write("\n")
-            # f.write("=" * 70 + "\n")
-            # f.write(f"Job {idx} completed with return code {result.returncode}\n")
-            # f.write("STDOUT:\n")
-            # f.write(result.stdout + "\n")
+        output_path = os.path.join(script_dir, output_file)
+        with open(output_path, "a", encoding="utf-8") as f:
+            f.write("\n")
+            f.write("=" * 70 + "\n")
+            f.write(f"Job {idx} completed with return code {result.returncode}\n")
+            f.write("STDOUT:\n")
+            f.write(result.stdout + "\n")
             if result.stderr:
                 f.write("STDERR:\n")
                 f.write(result.stderr + "\n")
-            # f.write("=" * 70 + "\n")
+            f.write("=" * 70 + "\n")
 
         if result.returncode == 0:
-            print(f"[Job {idx}] Completed successfully and output saved to {output_file}")
+            print(f"[Job {idx}] Completed successfully and output saved to {output_path}")
         else:
-            print(f"[Job {idx}] Failed with return code {result.returncode}; see {output_file}")
+            print(f"[Job {idx}] Failed with return code {result.returncode}; see {output_path}")
 
         return idx, result.returncode == 0
 

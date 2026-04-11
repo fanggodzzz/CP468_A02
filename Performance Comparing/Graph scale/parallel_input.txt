@@ -1,0 +1,3 @@
+2
+graph1.txt output1.txt
+graph2.txt output2.txt

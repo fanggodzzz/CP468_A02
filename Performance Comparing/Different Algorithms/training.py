@@ -22,7 +22,7 @@ EPSILON = 1.0
 EPSILON_MIN = 0.01
 EPSILON_DECAY = 0.99998
 ALPHA_MIN = 0.01    
-ALPHA_DECAY = 0.99998
+ALPHA_DECAY = 1.0
 EPISODES = 750000
 MAX_STEPS = 100
 
@@ -69,7 +69,7 @@ def q_learning_train(episodes, output_file, max_steps):
             steps += 1
 
             dist, prev = env.Dijkstra(current)
-            state = (current, chosen_lot, tuple(env.p_avail))
+            state = env.create_state(current, chosen_lot, dist, prev)
 
             if state not in Q:
                 Q[state] = {a: 0 for a in ACTIONS}
@@ -80,65 +80,36 @@ def q_learning_train(episodes, output_file, max_steps):
             else:
                 action = max(Q[state], key=Q[state].get)
 
-            # Action: Move
             if action == "move":
-                # Prevent moving if at the parking lot
-                if current == chosen_lot:
-                    r = -100
-                    next_state = (current, chosen_lot, tuple(env.p_avail))
-                    done = False
-
-                # Prevent further running if not reaching the lot
-                elif dist[chosen_lot] == float('inf'):
-                    r = -100
-                    next_state = (current, chosen_lot, tuple(env.p_avail))
-                    done = False
-
+                if current == chosen_lot or dist[chosen_lot] == float('inf'):
+                    r = -50
+                    done = True
                 else:
-                    # Get the next node on the shortest path
                     next_node = env.get_next_node(current, chosen_lot, prev)
+                    edge_weight = next((w for v, w in env.graph[current] if v == next_node), None)
 
-                    # Get the weight and calculate the time travel for that edge
-                    edge_weight = None
-                    for v, w in env.graph[current]:
-                        if v == next_node:
-                            edge_weight = w
-                            break
-
-                    level = env.traffic.get((current, next_node), "low")
-                    factor = env.traffic_multiplier(level)
+                    factor = env.traffic_multiplier(env.traffic.get((current, next_node), "low"))
                     step_time = edge_weight * factor
 
-                    # Calculate the cumulative time travel
                     travel_time += step_time
+                    current = next_node
 
-                    # Transition
-                    next_state = (next_node, chosen_lot, tuple(env.p_avail))
-                    r = -step_time
+                    #Recompute after changing node
+                    dist, prev = env.Dijkstra(current)
+
+                    r = -step_time * 0.1
                     done = False
 
-            # Action: Switch
             elif action == "switch":
                 chosen_lot = random.choice(list(env.LOTS.values()))
-                next_state = (current, chosen_lot, tuple(env.p_avail))
-
-                # Small penalty for switching
                 r = -5
                 done = False
 
-            # Action: Park
             else:
-                next_state = (current, chosen_lot, tuple(env.p_avail))
+                r = env.reward(state, travel_time)
+                done = True
 
-                # Prevent parking at anywhere
-                if current != chosen_lot:
-                    r = -200
-                    done = False
-
-                # Calculate reward for final state
-                else:
-                    r = env.reward(next_state, travel_time)
-                    done = True
+            next_state = env.create_state(current, chosen_lot, dist, prev)
 
             if next_state not in Q:
                 Q[next_state] = {a: 0 for a in ACTIONS}

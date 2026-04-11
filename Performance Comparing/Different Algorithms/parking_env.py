@@ -20,17 +20,28 @@ PENALTY = 5000  # Important
 # ---------------------------------------------------------
 # Environment
 # ---------------------------------------------------------
-LOTS = {"1": 21, "2": 22, "3": 23, "4": 24, "5": 25}
+W_MAX = 10
+LAMBDA_WALK = 10.0
+LAMBDA_PRICE = 1.0
+PENALTY = 5000  # Important
+
+# ---------------------------------------------------------
+# Environment
+# ---------------------------------------------------------
+LOTS = {"0": 21, "1": 22, "2": 23, "3": 24, "4": 25}
 
 # reverse map for fast lookup
 LOT_INDEX = {v: i for i, v in enumerate(LOTS.values())}
 
-p_avail = [1, 1, 1, 1, 1]
+p_avail = [1] * 5
 walk_km = [0, 0, 0, 0, 0]
 price = [0, 0, 0, 0, 0]
 
 graph = {}
 traffic = {}
+
+# Controlled dynamic environment, change by 50% chance
+ENV_CHANGE_PROB = 0.5
 
 
 # ---------------------------------------------------------
@@ -85,17 +96,14 @@ def traffic_multiplier(level):
 
 def randomize_traffic():
     """
-    Randomize traffic levels for edges in the graph.
-
-    Each edge has a 30% chance of having traffic ("low", "medium", "high").
+    Randomize the traffic for edges in the graph.
     """
     global traffic
     traffic = {}
 
     for u in graph:
         for v, _ in graph[u]:
-            if random.random() < 0.3:
-                traffic[(u, v)] = random.choice(["low", "medium", "high"])
+            traffic[(u, v)] = random.choice(["low", "medium", "high"])
 
 
 # ---------------------------------------------------------
@@ -119,13 +127,13 @@ def create_environment():
     change_environment()
 
 
-def change_environment():
+def change_environment(force=False):
     """
-    Update the dynamic environment.
+    Create or update the dynamic environment.
+    """
+    if not force and random.random() >= ENV_CHANGE_PROB:
+        return
 
-    Randomizes parking lot availability (0/1) and prices (10-15),
-    and randomizes traffic levels.
-    """
     global p_avail, price
 
     for i in range(5):
@@ -201,30 +209,152 @@ def get_next_node(current, target, prev):
 
 
 # ---------------------------------------------------------
-# Reward
+# Reward for final state
 # ---------------------------------------------------------
 def reward(state, travel_time):
-    """
-    Calculate the reward for reaching a parking lot state.
+    current_node, chosen_lot, is_lot_full, *_ = state
 
-    Args:
-        state (tuple): (node, chosen_lot, avail_tuple)
-        travel_time (float): Total travel time to reach the lot.
+    if current_node != chosen_lot:
+        return -PENALTY
+    
+    if current_node not in LOT_INDEX:
+        return -PENALTY
 
-    Returns:
-        float: Reward value. Returns -PENALTY if not at chosen lot, lot unavailable, or walking distance too far.
-    """
-    node, chosen_lot, avail_tuple = state
+    idx = LOT_INDEX[current_node]
 
-    if node not in LOTS.values() or node != chosen_lot:
-        return -PENALTY - 5
-
-    idx = LOT_INDEX[node]
-
-    if avail_tuple[idx] == 0 or walk_km[idx] > W_MAX:
-        return -PENALTY - 6
+    if is_lot_full:
+        return -PENALTY
 
     return 500 - travel_time - LAMBDA_WALK * walk_km[idx] - LAMBDA_PRICE * price[idx]
+
+
+# ---------------------------------------------------------
+# State
+# ---------------------------------------------------------
+def is_current_lot_full(chosen_lot):
+    if chosen_lot not in LOTS.values():
+        return True
+    idx = LOT_INDEX[chosen_lot]
+    return p_avail[idx] == 0 or walk_km[idx] > W_MAX
+
+
+def get_travel_time_bin(current_node, chosen_lot, dist):
+    """
+    Travel time to destination (chosen lot) using precomputed dist.
+
+    Bins:
+        0: near (<= 20)
+        1: medium (20 - 50)
+        2: far (50+)
+    """
+    travel_time = dist.get(chosen_lot, float('inf'))
+
+    if travel_time <= 20:
+        return 0
+    elif travel_time <= 50:
+        return 1
+    else:
+        return 2
+
+def get_availability_level():
+    """
+    Availability = (# available & valid lots) / (# valid lots)
+
+    Valid lot = walk_km <= W_MAX
+
+    Levels:
+        0: low    (<= 30%)
+        1: medium (30% - 75%)
+        2: high   (> 75%)
+    """
+    valid = 0
+    available = 0
+
+    for i in range(5):
+        if walk_km[i] <= W_MAX:
+            valid += 1
+            if p_avail[i] == 1:
+                available += 1
+
+    if valid == 0:
+        return 0
+
+    ratio = available / valid
+
+    if ratio <= 0.3:
+        return 0
+    elif ratio <= 0.75:
+        return 1
+    else:
+        return 2
+
+
+def get_traffic_level(current_node, chosen_lot, dist, prev):
+    """
+    Average traffic along shortest path → discretized
+
+    Output:
+        1: low
+        2: medium
+        3: heavy
+    """
+    if dist.get(chosen_lot, float('inf')) == float('inf'):
+        return 3
+
+    path = []
+    node = chosen_lot
+    while node != current_node and node is not None:
+        path.append(node)
+        node = prev[node]
+
+    if node is None:
+        return 3
+
+    path.append(current_node)
+    path.reverse()
+
+    total = 0
+    count = 0
+
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i + 1]
+        level = traffic.get((u, v), "low")
+        total += traffic_multiplier(level)
+        count += 1
+
+    if count == 0:
+        return 1
+
+    avg = total / count
+
+    if avg <= 2:
+        return 1
+    elif avg <= 5:
+        return 2
+    else:
+        return 3
+
+
+def create_state(current_node, chosen_lot, dist, prev):
+    """
+    State:
+        (
+            current_node,
+            chosen_lot,
+            is_current_lot_full,
+            travel_time_bin,
+            availability_level,
+            traffic_level
+        )
+    """
+    return (
+        current_node,
+        chosen_lot,
+        is_current_lot_full(chosen_lot),
+        get_travel_time_bin(current_node, chosen_lot, dist),
+        get_availability_level(),
+        get_traffic_level(current_node, chosen_lot, dist, prev)
+    )
 
 
 def snapshot_environment():
