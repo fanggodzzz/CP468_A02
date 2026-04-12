@@ -491,7 +491,7 @@ def q_learning_simulate():
                     done = False
 
             elif action == "switch":
-                chosen_lot = env.find_the_best_lot_by_distance(current, dist)
+                chosen_lot = find_the_best_lot_by_distance(current, dist)
                 if chosen_lot is None:
                     chosen_lot = random.choice(PARKING_LOTS)
                 r = -5
