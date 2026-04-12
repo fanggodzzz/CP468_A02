@@ -8,6 +8,7 @@ It includes Q-table initialization, training loop, and saving the trained Q-tabl
 import argparse
 import numpy as np
 import random
+import os
 
 import parking_env as env
 
@@ -26,6 +27,7 @@ ALPHA_DECAY = 1.0
 EPISODES = 750000
 MAX_STEPS = 100
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 def save_q_table(q_table, filename):
     """
@@ -35,10 +37,11 @@ def save_q_table(q_table, filename):
         q_table (dict): The Q-table to save.
         filename (str): Path to save the file.
     """
+    filename = os.path.join(script_dir, filename)
     np.save(filename, q_table, allow_pickle=True)
 
 
-def q_learning_train(episodes, output_file, max_steps):
+def q_learning_train(episodes, max_steps, graph_file):
     """
     Train the Q-learning agent.
 
@@ -46,19 +49,21 @@ def q_learning_train(episodes, output_file, max_steps):
         episodes (int): Number of training episodes.
         output_file (str): Path to save the trained Q-table.
         max_steps (int): Maximum steps per episode.
+        graph_file (str): Path to the graph input file.
     """
     Q = {}
     epsilon = EPSILON
     alpha = ALPHA
 
-    env.create_environment()
+    graph_file = os.path.join(script_dir, graph_file)
+    env.create_environment(graph_file)
 
     for ep in range(episodes):
         msg = f"Trained {ep + 1} episodes"
         print(msg, end='\r')
 
         current = 0
-        chosen_lot = random.choice(list(env.LOTS.values()))
+        chosen_lot = random.choice(env.PARKING_LOTS)
         done = False
         steps = 0
         travel_time = 0
@@ -101,7 +106,9 @@ def q_learning_train(episodes, output_file, max_steps):
                     done = False
 
             elif action == "switch":
-                chosen_lot = random.choice(list(env.LOTS.values()))
+                chosen_lot = env.find_the_best_lot_by_distance(current, dist)
+                if chosen_lot is None:
+                    chosen_lot = random.choice(env.PARKING_LOTS)
                 r = -5
                 done = False
 
@@ -127,8 +134,8 @@ def q_learning_train(episodes, output_file, max_steps):
         if alpha > ALPHA_MIN:
             alpha *= ALPHA_DECAY
 
-    save_q_table(Q, output_file)
-    print(f"Saved Q-table to {output_file}")
+    save_q_table(Q, "q_table.npy")
+    print(f"Saved Q-table to q_table.npy")
 
 
 def main():
@@ -136,16 +143,15 @@ def main():
     Main function to parse arguments and start training.
     """
     parser = argparse.ArgumentParser(description="Train Q-learning and save the Q table.")
-    parser.add_argument("--output", default="q_table.npy", help="Path to save the Q-table")
-    parser.add_argument("--episodes", type=int, default=EPISODES, help="Number of training episodes")
-    parser.add_argument("--max-steps", type=int, default=MAX_STEPS, help="Max steps per episode")
+    parser.add_argument("graph", help="Path to the graph input file")
+    parser.add_argument("episodes", type=int, help="Number of training episodes")
     args = parser.parse_args()
 
     print("Starting Q-learning training...")
 
-    q_learning_train(args.episodes, args.output, args.max_steps)
+    q_learning_train(args.episodes, MAX_STEPS, args.graph)
 
-    print("Training completed.")
+    print("-----Training done-----")
 
 
 if __name__ == "__main__":

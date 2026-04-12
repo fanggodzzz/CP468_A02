@@ -56,15 +56,14 @@ def run_training_job(args):
 
         output_path = os.path.join(script_dir, output_file)
         with open(output_path, "a", encoding="utf-8") as f:
-            f.write("\n")
-            f.write("=" * 70 + "\n")
-            f.write(f"Job {idx} completed with return code {result.returncode}\n")
-            f.write("STDOUT:\n")
-            f.write(result.stdout + "\n")
+            # f.write("\n")
+            # f.write("=" * 70 + "\n")
+            # f.write(f"Job {idx} completed with return code {result.returncode}\n")
+            # f.write("STDOUT:\n")
+            # f.write(result.stdout + "\n")
             if result.stderr:
                 f.write("STDERR:\n")
                 f.write(result.stderr + "\n")
-            f.write("=" * 70 + "\n")
 
         if result.returncode == 0:
             print(f"[Job {idx}] Completed successfully and output saved to {output_path}")

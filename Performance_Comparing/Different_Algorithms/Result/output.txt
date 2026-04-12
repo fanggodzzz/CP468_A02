@@ -1,0 +1,2 @@
+q-learning avg score, q-learning success, greedy avg score, greedy success, dijkstra avg score, dijkstra success, samples
+320.6176, 99434, 139.3687, 50470,  138.9083, 50570, 100000

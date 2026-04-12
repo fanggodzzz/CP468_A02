@@ -14,7 +14,7 @@ PENALTY = 5000
 # ---------------------------------------------------------
 # Q-learning parameters 
 # ---------------------------------------------------------
-EPISODES = 1000000
+EPISODES = 500000
 MAX_STEPS = 100
 PERIOD = 20000
 SAMPLE = 10000
@@ -239,6 +239,30 @@ def get_next_node(current, target, prev):
 
     return path[-1]
 
+def find_the_best_lot_by_distance(current_node, dist=None):
+    """Find the nearest valid lot by shortest path distance only."""
+    if dist is None:
+        dist, _ = Dijkstra(current_node)
+
+    best_lot = None
+    best_dist = float('inf')
+
+    for lot in PARKING_LOTS:
+        idx = LOT_INDEX[lot]
+
+        if p_avail[idx] == 0 or walk_km[idx] > W_MAX:
+            continue
+
+        lot_dist = dist.get(lot, float('inf'))
+        if lot_dist == float('inf'):
+            continue
+
+        if lot_dist < best_dist or (lot_dist == best_dist and (best_lot is None or lot < best_lot)):
+            best_dist = lot_dist
+            best_lot = lot
+
+    return best_lot
+
 # ---------------------------------------------------------
 # State 
 # ---------------------------------------------------------
@@ -392,7 +416,9 @@ def run_trial():
             current = next_node
 
         elif action == "switch":
-            chosen_lot = random.choice(PARKING_LOTS)
+            chosen_lot = find_the_best_lot_by_distance(current, dist)
+            if chosen_lot is None:
+                chosen_lot = random.choice(PARKING_LOTS)
 
         else:
             return max(reward(state, travel_time), -1)
